@@ -72,6 +72,17 @@ class GmailClient:
             .execute()
         )
         messages = results.get("messages", [])
+
+        # Manejo de paginación (>500 resultados)
+        while "nextPageToken" in results:
+            results = (
+                self._service.users()
+                .messages()
+                .list(userId="me", q=query, maxResults=500, pageToken=results["nextPageToken"])
+                .execute()
+            )
+            messages.extend(results.get("messages", []))
+
         logger.info("Encontrados %d emails de BICE", len(messages))
 
         emails = []

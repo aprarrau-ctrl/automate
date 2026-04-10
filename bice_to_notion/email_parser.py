@@ -49,7 +49,9 @@ def parse_email(email: RawEmail) -> BiceMovement | None:
         return _parse_transfer_out(email)
     elif "recibiste una transferencia" in subject:
         return _parse_transfer_in(email)
-    elif "enviamos tu pago a servipag" in subject:
+    elif "aviso de transferencia de fondos" in subject:
+        return _parse_fund_transfer_legacy(email)
+    elif "enviamos tu pago a" in subject:
         return _parse_servipag(email)
     elif "confirmaci" in subject and "pago de tarjeta" in subject:
         return _parse_card_payment(email)
@@ -188,6 +190,49 @@ def _parse_card_payment(email: RawEmail) -> BiceMovement | None:
         )
     except Exception:
         logger.exception("Error parseando pago tarjeta (id=%s)", email.id)
+        return None
+
+
+def _parse_fund_transfer_legacy(email: RawEmail) -> BiceMovement | None:
+    """
+    Parsea el formato antiguo 'Aviso de transferencia de fondos'.
+    Este template usa texto libre en lugar de tablas key/value.
+    """
+    try:
+        soup = BeautifulSoup(email.body_html, "lxml")
+        text = soup.get_text(separator="\n")
+
+        amount_m = re.search(r"Monto[:\s]*\$?\s*([\d\s\.]+)", text)
+        dest_m = re.search(r"Transferiste a[:\s]*\n?\s*(.+)", text)
+        op_m = re.search(r"Operaci[oó]n\s+N[°o\.]?\s*(\S+)", text, re.IGNORECASE)
+        date_m = re.search(r"(\d{1,2}\s+\w{3}\s+\d{4}\s*[-–]\s*\d{1,2}:\d{2})", text)
+        rut_m = re.search(r"RUT\s+([\d\.\-]+\-[\dkK])", text)
+        bank_m = re.search(r"Banco\s+([^\n]+)", text)
+
+        amount = _parse_amount(amount_m.group(1) if amount_m else "0")
+        dest_name = _clean_value(dest_m.group(1)) if dest_m else "Desconocido"
+        op_number = _clean_value(op_m.group(1)) if op_m else ""
+        date = _parse_bice_datetime(date_m.group(1)) if date_m else email.received_at
+
+        notes_parts = [
+            f"Op: {op_number}" if op_number else "",
+            f"RUT destino: {rut_m.group(1)}" if rut_m else "",
+            f"Banco destino: {_clean_value(bank_m.group(1))}" if bank_m else "",
+        ]
+        notes = "\n".join(p for p in notes_parts if p.strip().split(": ", 1)[-1])
+
+        return BiceMovement(
+            gmail_id=email.id,
+            subject=email.subject,
+            movement_type=TYPE_TRANSFER_OUT,
+            amount=amount,
+            transaction_date=date or email.received_at,
+            merchant=dest_name,
+            operation_number=op_number,
+            notes=notes,
+        )
+    except Exception:
+        logger.exception("Error parseando aviso transferencia fondos (id=%s)", email.id)
         return None
 
 
