@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "prompt-optimizer@devsforge-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "devsforge-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "devsforge/marketplace"
+      }
+    }
+  }
+}
